@@ -1,0 +1,14 @@
+fastapi==0.116.1
+uvicorn==0.35.0
+pydantic==2.11.7
+pydantic-settings==2.13.1
+openai==2.26.0
+langchain==1.2.13
+langchain-mcp-adapters==0.2.2
+langchain-openai==1.1.11
+fastmcp==3.1.0
+httpx==0.28.1
+jsonschema==4.26.0
+PyYAML==6.0.3
+pytest==8.4.2
+python-dotenv==1.1.1

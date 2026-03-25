@@ -1,0 +1,12 @@
+services:
+  data_center:
+    enabled: true
+    transport: stdio
+    command: /Users/zhongym/ai_agent/.venv/bin/python
+    args:
+      - -m
+      - mcp_server.server
+    cwd: /Users/zhongym/ai_agent
+    env:
+      MCP_TRANSPORT: stdio
+    timeout_seconds: 10
