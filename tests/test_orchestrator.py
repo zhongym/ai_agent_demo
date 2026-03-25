@@ -57,20 +57,9 @@ async def test_handle_question_requires_initialized_orchestrator() -> None:
 
 
 @pytest.mark.anyio
-async def test_product_recommend_flow_uses_run_skill_then_mcp_tool() -> None:
+async def test_direct_product_search_can_call_mcp_tool_without_skill() -> None:
     chat_model = ScriptedAgentChatModel(
         responses=[
-            AIMessage(
-                content="",
-                tool_calls=[
-                    {
-                        "name": "run_skill",
-                        "args": {"skill": "product_recommend", "args": "品牌=李宁 价格上限=500 类目=鞋"},
-                        "id": "call_skill",
-                        "type": "tool_call",
-                    }
-                ],
-            ),
             AIMessage(
                 content="",
                 tool_calls=[
@@ -95,11 +84,9 @@ async def test_product_recommend_flow_uses_run_skill_then_mcp_tool() -> None:
     orchestrator = build_test_orchestrator(chat_model)
     result = await orchestrator.handle_question("thread-product", "推荐500元以内李宁鞋")
 
-    assert [item.name for item in result.message_summary.tool_calls] == ["run_skill", "data_center_search_products"]
-    assert result.message_summary.tool_calls[0].response["skill_name"] == "product_recommend"
-    assert result.message_summary.tool_calls[1].response is not None
-    assert all(item["brand"] == "李宁" for item in result.message_summary.tool_calls[1].response["items"])
-    assert "run_skill" in chat_model.bound_tool_names
+    assert [item.name for item in result.message_summary.tool_calls] == ["data_center_search_products"]
+    assert result.message_summary.tool_calls[0].response is not None
+    assert all(item["brand"] == "李宁" for item in result.message_summary.tool_calls[0].response["items"])
     assert "data_center_search_products" in chat_model.bound_tool_names
 
 
@@ -129,23 +116,12 @@ async def test_session_history_is_replayed_on_next_turn() -> None:
 
 
 @pytest.mark.anyio
-async def test_kpi_query_can_use_time_context_tool_for_relative_dates() -> None:
+async def test_direct_metric_query_can_use_time_context_tool_for_relative_dates() -> None:
     today = date.today()
     first_day_this_month = today.replace(day=1)
 
     chat_model = ScriptedAgentChatModel(
         responses=[
-            AIMessage(
-                content="",
-                tool_calls=[
-                    {
-                        "name": "run_skill",
-                        "args": {"skill": "kpi_query", "args": "指标=销售额 时间=本月"},
-                        "id": "call_skill",
-                        "type": "tool_call",
-                    }
-                ],
-            ),
             AIMessage(
                 content="",
                 tool_calls=[
@@ -182,7 +158,6 @@ async def test_kpi_query_can_use_time_context_tool_for_relative_dates() -> None:
     result = await orchestrator.handle_question("thread-kpi", "我这个月销售额多少")
 
     assert [item.name for item in result.message_summary.tool_calls] == [
-        "run_skill",
         "get_time",
         "data_center_query_metric",
     ]
@@ -267,6 +242,54 @@ async def test_sales_inventory_snapshot_uses_two_mcp_tools() -> None:
     assert result.message_summary.tool_calls[0].response["skill_name"] == "sales_inventory_snapshot"
     assert "data_center_query_metric" in chat_model.bound_tool_names
     assert "data_center_top_products" in chat_model.bound_tool_names
+
+
+@pytest.mark.anyio
+async def test_image_ocr_skill_uses_run_skill_then_shell_tool() -> None:
+    chat_model = ScriptedAgentChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "run_skill",
+                        "args": {
+                            "skill": "image_ocr_extract",
+                            "args": "请识别这张图里的文字 https://example.com/receipt.png",
+                        },
+                        "id": "call_skill",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "run_shell_command",
+                        "args": {
+                            "commands": [
+                                ".venv/bin/python app/skills/ocr/ocr_runner.py https://example.com/receipt.png",
+                            ],
+                            "working_directory": ".",
+                        },
+                        "id": "call_shell",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+            AIMessage(content="识别完成。OCR原文为“订单号 12345”，简要整理为这是一张包含订单编号的图片。"),
+        ]
+    )
+    orchestrator = build_test_orchestrator(chat_model)
+
+    result = await orchestrator.handle_question("thread-ocr", "请识别这张图里的文字 https://example.com/receipt.png")
+
+    assert [item.name for item in result.message_summary.tool_calls] == ["run_skill", "run_shell_command"]
+    assert result.message_summary.tool_calls[0].response["skill_name"] == "image_ocr_extract"
+    assert result.message_summary.tool_calls[1].arguments["commands"][0].startswith(".venv/bin/python app/skills/ocr/ocr_runner.py")
+    assert result.message_summary.tool_calls[1].arguments["working_directory"] == "."
+    assert "run_shell_command" in chat_model.bound_tool_names
 
 
 @pytest.mark.anyio

@@ -3,6 +3,7 @@ from __future__ import annotations
 from langchain_core.tools.structured import StructuredTool
 
 from app.local_tools.run_skill import build_run_skill_tool
+from app.local_tools.shell_command import run_shell_command
 from app.local_tools.time import get_time
 from app.runtime.skill_registry import SkillRegistry
 
@@ -13,4 +14,4 @@ def build_local_tools(*, skill_registry: SkillRegistry) -> list[StructuredTool]:
     return [build_run_skill_tool(skill_registry)]
 
 
-__all__ = ["build_local_tools", "get_time"]
+__all__ = ["build_local_tools", "get_time", "run_shell_command"]

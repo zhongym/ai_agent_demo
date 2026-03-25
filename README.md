@@ -16,12 +16,10 @@
 
 ## 🌟 当前内置能力
 
-当前仓库自带 4 个业务 Skill：
+当前仓库自带 2 个业务 Skill：
 
-- `kpi_query`：查询销售额、订单量、客单价等指标
-- `inventory_analysis`：查询库存排行、仓库库存情况
-- `product_recommend`：按品牌、价格、品类和场景推荐商品
 - `sales_inventory_snapshot`：组合查询销售指标和库存排行，输出经营概览
+- `image_ocr_extract`：提取图片 URL 中的文字，并按用户目标做总结、归类或用途分析
 
 常见问题示例：
 
@@ -29,6 +27,8 @@
 - `华东一仓库存最高的商品`
 - `推荐 500 元以内的李宁鞋`
 - `给我看下本月销售额和库存最高的前 3 个商品`
+- `请帮我识别这张图片里的文字 https://example.com/demo.png`
+- `帮我判断这张图片大概是干嘛的 https://example.com/demo.png`
 
 ---
 
@@ -51,6 +51,7 @@
 
 - 🥇 如果某个 Skill 明显匹配当前任务，LLM 必须先调用 `run_skill`
 - 📅 如果用户说“本月 / 上个月 / 今日 / 近30天”，LLM 应先调用 `get_time`
+- 🖼️ 如果用户带了图片 URL，且问题是提取文字、总结内容、判断图片用途或文档类型，应先进入 OCR skill，再调用 `run_shell_command`
 - 🚫 不允许在没有工具结果的情况下编造真实数据
 
 ---
@@ -70,6 +71,7 @@ app/
     __init__.py            # 本地工具聚合出口
     run_skill.py           # 动态本地工具：run_skill
     time.py                # 静态本地工具：get_time
+    shell_command.py       # 静态本地工具：run_shell_command
   runtime/
     skill_registry.py      # Skill 加载与索引
     local_tool_registry.py # 本地工具注册
@@ -78,10 +80,9 @@ app/
   schemas/
     api.py                 # API 请求/响应 schema
   skills/
-    sales/kpi_query.md
-    inventory/inventory_analysis.md
-    catalog/product_recommend.md
     operations/sales_inventory_snapshot.md
+    ocr/image_ocr_extract.md
+    ocr/ocr_runner.py
   config/
     mcp_services.yaml      # MCP 客户端配置
 
@@ -126,16 +127,16 @@ cp mcp_server/.env.example mcp_server/.env
 ```bash
 curl -X POST http://127.0.0.1:8000/query \
   -H 'Content-Type: application/json' \
-  -d '{"thread_id":"product-thread","question":"推荐500元以内李宁鞋"}'
+  -d '{"thread_id":"snapshot-thread","question":"给我看下本月销售额和库存最高的前3个商品"}'
 ```
 
 一个典型响应大致像这样：
 
 ```json
 {
-  "thread_id": "product-thread",
-  "question": "推荐500元以内李宁鞋",
-  "answer": "我为你筛出几款 500 元以内的李宁鞋……",
+  "thread_id": "snapshot-thread",
+  "question": "给我看下本月销售额和库存最高的前3个商品",
+  "answer": "本月销售额表现稳定，库存最高的前三个商品主要集中在跑鞋类目……",
   "llm_provider": "bailian-langchain",
   "mcp_transport": "data_center:stdio",
   "message_summary": {
@@ -144,11 +145,11 @@ curl -X POST http://127.0.0.1:8000/query \
         "name": "run_skill",
         "kind": "skill",
         "arguments": {
-          "skill": "product_recommend",
-          "args": "品牌=李宁 价格上限=500 类目=鞋"
+          "skill": "sales_inventory_snapshot",
+          "args": "指标=销售额 时间=本月 前3个"
         },
         "response": {
-          "skill_name": "product_recommend"
+          "skill_name": "sales_inventory_snapshot"
         }
       }
     ]
@@ -273,9 +274,8 @@ Skill 文件位于 `app/skills/**/*.md`，每个文件都包含：
 
 例如：
 
-- `app/skills/sales/kpi_query.md`
-- `app/skills/inventory/inventory_analysis.md`
-- `app/skills/catalog/product_recommend.md`
+- `app/skills/operations/sales_inventory_snapshot.md`
+- `app/skills/ocr/image_ocr_extract.md`
 
 `SkillRegistry` 会负责：
 
@@ -305,8 +305,13 @@ LLM 不直接读取这些 Markdown 文件；它是通过本地工具 `run_skill`
 直接在模块级定义并导出，例如：
 
 - `get_time`
+- `run_shell_command`
 
-`get_time` 走的就是 `LocalToolRegistry._collect_static_tools()` 这条静态收集路径，用于处理相对日期，不再依赖 MCP 服务 ✍️
+`get_time` 和 `run_shell_command` 走的都是 `LocalToolRegistry._collect_static_tools()` 这条静态收集路径。
+
+- `get_time` 用于处理相对日期，不再依赖 MCP 服务 ✍️
+- `run_shell_command` 用于在受限白名单内顺序执行 `.venv/bin/pip install`、`.venv/bin/python` 等命令，并可通过 `working_directory` 指定项目目录或 `/tmp`
+- `image_ocr_extract` 不再动态拼接 OCR Python 代码，而是直接调用固定脚本 `app/skills/ocr/ocr_runner.py`
 
 本地工具统一使用 LangChain 的 `@tool` 定义，并通过 `extras.local_tool` 声明运行时信息，例如：
 
